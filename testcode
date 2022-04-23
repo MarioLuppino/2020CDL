@@ -1,0 +1,153 @@
+
+setwd("~/Dropbox/School/Graduate School/Crowder Lab/Research/RS Summer 2022/scripts")
+library(rgdal)
+library(raster)
+library(maps)
+library(rgeos)
+library(sf)
+library(dplyr)
+
+###load occ
+occ20<-read.csv("../data/2020 Field Coords.csv",header=T)
+occ21<-read.csv("../data/2021 Field Coords.csv",header=T)
+
+head(occ20)
+head(occ21)
+
+##let it georefering
+coordinates(occ20)= ~Longitude+ Latitude
+coordinates(occ21)= ~Longitude+ Latitude
+
+###define coordinate system
+crs(occ20)<-"+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+crs(occ21)<-"+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+
+
+
+##load raster
+cdl20<-raster("../figures/CDL_2020_clip_20220418154619_208100508.tif")
+cdl21<-raster("../figures/CDL_2021_clip_20220418154619_208100508.tif")
+
+## check coordinate system
+crs(cdl21)
+
+###unifing coordinate system
+occ200 <- spTransform(occ20,crs(cdl20))
+occ211 <- spTransform(occ21,crs(cdl20))
+
+plot(cdl20)
+plot(occ200, add=T, pch=200,size=3)
+
+
+## buffering and plot
+pbuf20 = buffer(occ200,width = 2000, dissolve =F)
+pbuf21 = buffer(occ211,width = 2000, dissolve =F)
+
+
+plot(cdl20)
+plot(pbuf20,add=TRUE)
+plot(occ200,add=TRUE)
+
+
+###########################################################
+############ Here 2020 as an example ######################
+library(sf)
+library(exactextractr)
+
+pbuf200 <- st_as_sf(pbuf20)
+pbuf211 <- st_as_sf(pbuf21)
+
+
+pbuf200$all<-exact_extract(cdl20, pbuf200, 'count')
+pbuf211$all<-exact_extract(cdl21, pbuf211, 'count')
+
+head(pbuf200)
+pbuf200$all
+
+######################################################
+######################################################
+####### separate Canola ###
+Canola <- cdl20
+Canola[Canola!=31]<- NA
+
+pbuf200$Canola<-exact_extract(Canola, pbuf200, 'count')
+
+head(pbuf200)
+pbuf200$Canola
+
+
+####### Separate Forest
+Forest <-cdl20
+Forest_d <-cdl20
+Forest_e <-cdl20
+Forest_m <-cdl20
+
+Forest[Forest != 63] <- NA
+Forest_d[Forest_d != 141]<- NA
+Forest_e[Forest_e != 142]<- NA
+Forest_m[Forest_m != 143]<- NA
+
+pbuf200$Forest<-exact_extract(Forest, pbuf200, 'count')
+pbuf200$Forest_d<-exact_extract(Forest_d, pbuf200, 'count')
+pbuf200$Forest_e<-exact_extract(Forest_e, pbuf200, 'count')
+pbuf200$Forest_m<-exact_extract(Forest_m, pbuf200, 'count')
+
+head(pbuf200)
+
+pbuf200$Forest
+pbuf200$Forest_d
+pbuf200$Forest_e
+pbuf200$Forest_m
+
+
+####### Separate Shrub land
+Shrubland1<-cdl20
+Shrubland2<-cdl20
+
+
+Shrubland1[Shrubland1 != 64] <- NA
+Shrubland2[Shrubland2 != 152] <- NA
+
+pbuf200$Shrubland1<-exact_extract(Shrubland1, pbuf200, 'count')
+pbuf200$Shrubland2<-exact_extract(Shrubland2, pbuf200, 'count')
+
+head(pbuf200)
+pbuf200$Shrubland1
+pbuf200$Shrubland2
+
+
+######## Explore and write out result #######
+head(pbuf200)
+dim(pbuf200)
+
+dat20<-pbuf200[c(1,3, 5:12)]
+head(dat20)
+
+dat20<-as.data.frame(dat20)
+dim(dat20)
+
+dat20 %>%
+  mutate(Forest_all = select(., Forest:Forest_m) %>% rowSums(na.rm = TRUE))
+
+head(dat20)
+dat20<-dat20[,1:9]
+write.csv(dat20,"../data/dat20.csv")
+
+dat20 %>%
+  mutate(Forest_all = select(., Forest_e:Forest_m) %>% rowSums(na.rm = TRUE))
+
+dat20_test1 <- dat20 %>% 
+  group_by(all) %>%
+  mutate(Percentage = paste0(round(dat20$Canola / dat20$all *100, 2),"%"))
+
+dat20_test <- dat20 %>% 
+  group_by(Farm.type) %>%
+  mutate(Percentage = paste0(round(Canola / all *100, 2),"%"))
+
+
+
+pivot_wider(names_from = "Farm.Name", values_from = "all") %>%
+  mutate(pct_yes = mites_yes / (mites_yes + mites_no),
+         pct_no = mites_no / (mites_yes + mites_no)) %>%
+  dplyr::select(-c(mites_yes, mites_no)) %>%
+  pivot_longer(names_to = "mite_status", values_to = "percent", -Habitat)
